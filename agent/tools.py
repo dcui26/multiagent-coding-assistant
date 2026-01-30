@@ -13,7 +13,7 @@ MIND_ROOT = Path(__file__).parent.parent / "mind"
 # --- WORKSPACE TOOLS (Safe File Operations) ---
 
 def read_file(filepath: str) -> str:
-    """Safely read a file from workspace with UTF-8 encoding."""
+    """Safely read a file from workspace with UTF-8 encoding and fallback."""
     full_path = WORKSPACE_ROOT / filepath
     
     # Security: Prevent path traversal
@@ -23,8 +23,16 @@ def read_file(filepath: str) -> str:
     if not full_path.exists():
         raise FileNotFoundError(f"{filepath} not found")
     
-    # ✅ FIX: Force encoding="utf-8"
-    return full_path.read_text(encoding="utf-8")
+    # Try UTF-8 first, fallback to latin-1 if it fails
+    try:
+        return full_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        print(f"   > ⚠️ Warning: {filepath} has encoding issues, using latin-1 fallback")
+        try:
+            return full_path.read_text(encoding="latin-1")
+        except Exception as e:
+            print(f"   > ❌ Could not read {filepath}: {e}")
+            return f"[FILE READ ERROR: {filepath}]"
 
 def write_file(filepath: str, content: str) -> None:
     """Safely write a file to workspace with UTF-8 encoding."""
@@ -37,8 +45,16 @@ def write_file(filepath: str, content: str) -> None:
     # Create parent directories if needed
     full_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # ✅ FIX: Force encoding="utf-8"
-    full_path.write_text(content, encoding="utf-8")
+    # Try to clean the content of problematic characters
+    try:
+        # Ensure content is valid UTF-8
+        content.encode('utf-8')
+        full_path.write_text(content, encoding="utf-8")
+    except UnicodeEncodeError:
+        # If content has weird characters, clean them
+        print(f"   > ⚠️ Warning: Cleaning non-UTF-8 characters from {filepath}")
+        clean_content = content.encode('utf-8', errors='ignore').decode('utf-8')
+        full_path.write_text(clean_content, encoding="utf-8")
 
 def list_files(directory: str = ".") -> list[str]:
     """List files in workspace directory."""
@@ -65,18 +81,18 @@ def load_mind_files() -> tuple[dict, dict]:
         manifest = {}
     else:
         try:
-            # ✅ FIX: Force encoding="utf-8"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print("   > ⚠️ Warning: manifest.json has errors, using empty dict")
             manifest = {}
 
     if not memory_path.exists():
         memory = {}
     else:
         try:
-            # ✅ FIX: Force encoding="utf-8"
             memory = json.loads(memory_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print("   > ⚠️ Warning: memory.json has errors, using empty dict")
             memory = {}
 
     return manifest, memory
@@ -85,7 +101,6 @@ def update_memory(new_memory: dict) -> None:
     """Used by Finalizer to save state."""
     MIND_ROOT.mkdir(parents=True, exist_ok=True)
     memory_path = MIND_ROOT / "memory.json"
-    # ✅ FIX: Force encoding="utf-8"
     memory_path.write_text(json.dumps(new_memory, indent=2), encoding="utf-8")
 
 def reset_project_memory() -> str:
@@ -101,7 +116,6 @@ def reset_project_memory() -> str:
         "tech_stack": [],
         "rules": []
     }
-    # ✅ FIX: Force encoding="utf-8"
     (MIND_ROOT / "manifest.json").write_text(json.dumps(default_manifest, indent=2), encoding="utf-8")
 
     default_memory = {
@@ -110,13 +124,12 @@ def reset_project_memory() -> str:
         "known_files": [],
         "error_log": []
     }
-    # ✅ FIX: Force encoding="utf-8"
     (MIND_ROOT / "memory.json").write_text(json.dumps(default_memory, indent=2), encoding="utf-8")
     
     return "Memory wiped. Workspace cleared. Ready for new project."
 
 def run_command(command: str) -> str:
-    """Executes a terminal command in the workspace."""
+    """Executes a terminal command in the workspace with robust encoding handling."""
     forbidden = ["rm -rf /", "format", "sudo"]
     if any(bad in command for bad in forbidden):
         return "Error: Command blocked for security."
@@ -128,12 +141,16 @@ def run_command(command: str) -> str:
             shell=True,
             capture_output=True,
             text=True,
-            encoding="utf-8",    # ✅ FIX: Force UTF-8 for subprocess output
-            errors='replace',    # ✅ FIX: Replace unreadable chars instead of crashing
+            encoding="utf-8",
+            errors='replace',  # Replace bad chars instead of crashing
             timeout=10 
         )
         
-        output = f"EXIT CODE: {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        # Clean output to ensure it's safe
+        stdout = result.stdout if result.stdout else ""
+        stderr = result.stderr if result.stderr else ""
+        
+        output = f"EXIT CODE: {result.returncode}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
         return output
         
     except subprocess.TimeoutExpired:

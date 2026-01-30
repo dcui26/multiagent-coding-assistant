@@ -20,7 +20,7 @@ from agent.nodes import (
 def route_bouncer(state: AgentState):
     """Decides if we proceed or stop based on Bouncer."""
     if state.get("in_scope"):
-        # If user asked for a reset/new project, branch_decision might be set
+        # Check if bouncer marked this as a direct architect call (e.g., reset)
         if state.get("branch_decision") == "architect":
             return "architect"
         return "optimizer"
@@ -32,6 +32,13 @@ def route_optimizer(state: AgentState):
     if decision == "dev_loop":
         return "coder"
     return "architect"
+
+def route_architect(state: AgentState):
+    """NEW: Check if this was a workspace management command that should skip dev loop."""
+    if state.get("dev_loop_complete") == True:
+        # This means architect handled a reset/clear command
+        return "finalizer"
+    return "coder"
 
 def route_debugger(state: AgentState):
     """Decides if we are done or need to fix bugs."""
@@ -75,8 +82,15 @@ workflow.add_conditional_edges(
     }
 )
 
-# Architect -> Coder (Always)
-workflow.add_edge("architect", "coder")
+# Architect -> Coder OR Finalizer (NEW: can skip dev loop for resets)
+workflow.add_conditional_edges(
+    "architect",
+    route_architect,
+    {
+        "coder": "coder",
+        "finalizer": "finalizer"
+    }
+)
 
 # Coder -> Debugger (Always)
 workflow.add_edge("coder", "debugger")
