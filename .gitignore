@@ -1,0 +1,10 @@
+archive/
+# --- Security (CRITICAL) ---
+.env
+__pycache__/
+*.pyc
+
+# --- System & IDE ---
+.DS_Store
+.vscode/
+.idea/
