@@ -1,13 +1,41 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from agent.states import AgentState
 from agent.model import get_model
-from agent.tools import list_files
+from agent.tools import list_files, reset_project_memory
 
 def generate_spec(state: AgentState):
     print("--- 🏗️ ARCHITECT: Generating Technical Spec ---")
     
+    request = state.get("request", "")
+    request_lower = request.lower()
+    
+    # SPECIAL CASE: Project Reset Commands
+    reset_keywords = [
+        "reset", "clear", "delete", "wipe", "clean", 
+        "new project", "start over", "start fresh", "clear workspace"
+    ]
+    
+    if any(keyword in request_lower for keyword in reset_keywords):
+        print("   > 🗑️ Project reset requested - clearing workspace")
+        reset_message = reset_project_memory()
+        
+        # Return a plan that explains what happened
+        plan = f"""## Project Reset Complete
+
+{reset_message}
+
+The workspace has been cleared and memory has been reset. You can now start a new project from scratch.
+
+What would you like to build next?
+"""
+        return {
+            "plan": plan,
+            "dev_iterations": 0,
+            "dev_loop_complete": True  # Skip dev loop entirely for resets
+        }
+    
+    # NORMAL CASE: Generate actual technical spec
     # 1. Gather Context
-    # We need to see the current file structure to plan correctly
     current_files = list_files()
     files_str = "\n".join(current_files) if current_files else "(No files yet)"
     
@@ -36,7 +64,6 @@ def generate_spec(state: AgentState):
     """
     
     # 3. Call the Model
-    # We pass the full context (manifest/memory) that the Optimizer loaded
     user_msg = f"User Request: {state['request']}\n\nProject Context:\n{state['context']}"
     
     response = llm.invoke([
@@ -45,9 +72,8 @@ def generate_spec(state: AgentState):
     ])
     
     # 4. Save to State
-    # The Dev Loop will read this 'plan' to know what to do.
     return {
         "plan": response.content,
-        "dev_iterations": 0,    # Reset loop counter
+        "dev_iterations": 0,
         "dev_loop_complete": False
     }

@@ -1,11 +1,28 @@
 import ast
-from langchain_core.messages import SystemMessage, HumanMessage  # <--- IMPORT HUMANMESSAGE
+from langchain_core.messages import SystemMessage, HumanMessage
 from agent.states import AgentState
 from agent.model import get_model
 from agent.tools import list_files, read_file, run_command
 
 def debugger_node(state: AgentState):
     print("--- 🕵️ DEBUGGER: Testing Code ---")
+    
+    # ⚠️ CRITICAL FIX: Prevent infinite loops
+    MAX_ITERATIONS = 5
+    current_iteration = state.get("dev_iterations", 0)
+    
+    if current_iteration >= MAX_ITERATIONS:
+        print(f"   > ⛔ Max iterations ({MAX_ITERATIONS}) reached. Stopping dev loop.")
+        return {
+            "dev_loop_complete": True,
+            "debug_feedback": None,
+            "debug_history": state.get("debug_history", []) + [{
+                "role": "debugger", 
+                "status": "max_iterations_reached",
+                "message": f"Stopped after {MAX_ITERATIONS} attempts. Manual review needed."
+            }]
+        }
+    
     current_files = list_files()
     
     # 1. PRE-CHECK: Syntax (Fast Fail)
@@ -39,7 +56,17 @@ def debugger_node(state: AgentState):
             result = run_command(f"python {tf}")
             execution_logs += f"\n--- EXECUTION OF {tf} ---\n{result}\n"
     else:
-        execution_logs = "No test files found. Code was not executed."
+        # ⚠️ CRITICAL FIX: NO TESTS = AUTO-REJECT
+        error_msg = "No test files found. Code must include tests to verify functionality."
+        print(f"   > ❌ {error_msg}")
+        return {
+            "dev_loop_complete": False,
+            "debug_feedback": error_msg,
+            "debug_history": state.get("debug_history", []) + [{
+                "role": "debugger", 
+                "status": "no_tests_found"
+            }]
+        }
 
     # 3. ANALYZE RESULTS (LLM)
     llm = get_model()

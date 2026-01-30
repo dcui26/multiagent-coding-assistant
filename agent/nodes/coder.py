@@ -1,5 +1,5 @@
 import re
-from langchain_core.messages import SystemMessage, HumanMessage  # <--- IMPORT HUMANMESSAGE
+from langchain_core.messages import SystemMessage, HumanMessage
 from agent.states import AgentState
 from agent.model import get_model
 from agent.tools import list_files, write_file
@@ -76,9 +76,17 @@ def coder_node(state: AgentState):
             print(f"   > Wrote {path}")
     else:
         print("   > ⚠️ No file tags found in output.")
+    
+    # ⚠️ MEDIUM FIX: Validation
+    if not touched_files:
+        print("   > ⚠️ WARNING: Coder produced no files. Debugger will likely reject this iteration.")
 
     # 5. Pass baton to Debugger
     return {
         "dev_iterations": state.get("dev_iterations", 0) + 1,
-        "debug_history": state.get("debug_history", []) + [{"role": "coder", "touched": touched_files}]
+        "debug_history": state.get("debug_history", []) + [{
+            "role": "coder", 
+            "touched": touched_files,
+            "files_written": len(touched_files)  # ← Track count for debugging
+        }]
     }

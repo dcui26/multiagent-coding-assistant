@@ -45,7 +45,13 @@ def finalizer_node(state: AgentState):
     Return ONLY the valid, updated JSON string.
     """
     
-    response = llm.invoke([SystemMessage(content=system_prompt)])
+    user_prompt = "Please update the memory based on the completed work described above."
+    
+    # ⚠️ CRITICAL FIX: Added HumanMessage
+    response = llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ])
     
     # 3. Parse and Save
     try:
@@ -67,12 +73,13 @@ def finalizer_node(state: AgentState):
         
         final_msg = f"Task Complete. Memory updated. (Files: {len(current_files)})"
         
-    except json.JSONDecodeError:
-        print("   > ❌ Error parsing memory update from LLM")
+    except json.JSONDecodeError as e:
+        print(f"   > ❌ Error parsing memory update from LLM: {e}")
         final_msg = "Task Complete, but failed to update memory JSON."
+        new_memory = {}
 
     # 4. Final Output
     return {
         "final_summary": final_msg,
-        "memory_update": new_memory if 'new_memory' in locals() else {}
+        "memory_update": new_memory
     }

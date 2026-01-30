@@ -1,4 +1,5 @@
 archive/
+workspace/
 # --- Security (CRITICAL) ---
 .env
 __pycache__/
